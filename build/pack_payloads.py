@@ -130,7 +130,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-STAGED = PROJECT / "build" / "launcher"
+STAGED = PROJECT / "translator" / "build" / "launcher"
 # This repository intentionally does not redistribute proprietary third-party application APKs.
 # Build with BUNDLED_APP=none; users can import their own legally obtained APK in the app.
 BUNDLED = PROJECT / "build" / "bundled-assets" / "app" / "base.apk"

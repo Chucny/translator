@@ -66,7 +66,7 @@ public final class Stubs {
             if (bridgeError != null) {
                 detail.append("\n\nBridge: ").append(bridgeError);
             }
-            Diagnostics.report(this, "stub " + getClass().getSimpleName() + " without a plugin", 
+            Diagnostics.report(this, "stub " + getClass().getSimpleName() + " without a plugin",
                     new IllegalStateException(detail.toString()), false);
 
             int pad = Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20,

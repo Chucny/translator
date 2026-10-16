@@ -28,7 +28,7 @@
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-ROOT="$HERE/build/launcher"
+ROOT="$HERE/translator/build/launcher"
 NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}
 if [ -z "$NDK" ]; then
     echo "Set ANDROID_NDK_HOME to an installed Android NDK (r29 recommended)." >&2
@@ -37,6 +37,8 @@ fi
 TOOLS="$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin"
 STRIP="$TOOLS/llvm-strip.exe"
 READELF="$TOOLS/llvm-readelf.exe"
+if [ ! -f "$STRIP" ]; then STRIP="$TOOLS/llvm-strip"; fi
+if [ ! -f "$READELF" ]; then READELF="$TOOLS/llvm-readelf"; fi
 
 for tool in "$STRIP" "$READELF"; do
     if [ ! -f "$tool" ]; then

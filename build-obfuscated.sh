@@ -13,6 +13,12 @@ ROOT="$HERE"
 LAUNCHER="$HERE/launcher"
 ARTIFACT="$HERE/build/outputs/chucnys-translator-obfuscated.apk"
 export BUNDLED_APP=none
+PYTHON=${PYTHON:-py}
+PYTHON_ARGS="-3"
+if ! command -v "$PYTHON" >/dev/null 2>&1 && [ -x "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Programs/Python/Python313/python.exe" ]; then
+    PYTHON="${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Programs/Python/Python313/python.exe"
+    PYTHON_ARGS=""
+fi
 
 mkdir -p "$HERE/build/outputs"
 
@@ -23,11 +29,11 @@ sh "$HERE/strip-runtime-binaries.sh"
 # Packs the runtime-only payload, copies the bridge library under a generated name, and writes the
 # generated Keys class that names them. Names are freshly random per build (PAYLOAD_SEED makes it
 # reproducible).
-py -3 "$HERE/build/pack_payloads.py"
+"$PYTHON" $PYTHON_ARGS "$HERE/build/pack_payloads.py"
 
 # Fresh names for every build keeps the renaming from being reproducible between two APKs of the
 # same source. Set OBFUSCATION_SEED for a reproducible build instead.
-py -3 "$HERE/build/make_dictionary.py" >/dev/null
+"$PYTHON" $PYTHON_ARGS "$HERE/build/make_dictionary.py" >/dev/null
 
 # Gradle 8.9 predates this machine's default JDK 26 and dies on it with a bare version number, so
 # the toolchain JDK is selected explicitly; the Windows gradle launcher needs a Windows path.
@@ -49,7 +55,7 @@ BUILT="$LAUNCHER/app/build/outputs/apk/release/app-release.apk"
 # whose signer changed cannot upgrade the installed one.
 STRIPPED="$HERE/build/payloads/final.unsigned.apk"
 ALIGNED="$HERE/build/payloads/final.aligned.apk"
-py -3 "$HERE/build/strip_dex_debug.py" --in "$BUILT" --out "$STRIPPED"
+"$PYTHON" $PYTHON_ARGS "$HERE/build/strip_dex_debug.py" --in "$BUILT" --out "$STRIPPED"
 
 SIGN_PROPS="$HOME/.chucnys-translator/signing.properties"
 if [ -f "$SIGN_PROPS" ]; then
@@ -64,7 +70,8 @@ fi
 # `-f`, not `-x`: on the Windows build host the SDK's .exe/.bat files carry no execute bit, so an
 # `-x` test rejects tools that run perfectly well. `if`, not `[ ] && ...`: under `set -e` a
 # short-circuiting AND-list aborts the script on the first candidate that does not exist.
-TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/34.0.0"
+TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/35.0.0"
+if [ ! -d "$TOOLS" ]; then TOOLS="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/34.0.0"; fi
 ZIPALIGN=""
 APKSIGNER=""
 for name in zipalign zipalign.exe; do
@@ -99,8 +106,8 @@ wc -c < "$ARTIFACT"
 #   audit_apk.py        fails on a mapping file, a symbol table, DWARF, a compiler banner, a
 #                       debug-info residue, a payload that is not opaque, or an entry name that
 #                       gives its contents away. See README-OBFUSCATION.md.
-py -3 "$HERE/build/verify_payloads.py" "$ARTIFACT"
-py -3 "$HERE/build/audit_apk.py" "$ARTIFACT"
+"$PYTHON" $PYTHON_ARGS "$HERE/build/verify_payloads.py" "$ARTIFACT"
+"$PYTHON" $PYTHON_ARGS "$HERE/build/audit_apk.py" "$ARTIFACT"
 
 echo "R8 mapping (the de-obfuscation key, keep it out of the shipped APK):"
 ls -l "$LAUNCHER/app/build/outputs/mapping/release/mapping.txt"

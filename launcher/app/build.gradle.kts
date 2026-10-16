@@ -142,8 +142,12 @@ android {
         // This Android module sits at launcher/app; rootProject is launcher/, so generated
         // runtime payload inputs are one directory above the Gradle project.
         assets.srcDir(rootProject.file("../build/payloads/assets"))
+        assets.srcDir(rootProject.file("../translator/build/launcher/assets"))
+        assets.srcDir(rootProject.file("../translator/build/payloads/assets"))
         jniLibs.srcDir(rootProject.file("../build/payloads/jniLibs"))
+        jniLibs.srcDir(rootProject.file("../translator/build/payloads/jniLibs"))
         java.srcDir(rootProject.file("../build/payloads/src"))
+        java.srcDir(rootProject.file("../translator/build/payloads/src"))
     }
 }
 

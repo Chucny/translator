@@ -6,8 +6,8 @@ The launcher decrypts two containers out of its assets (launcher/Payloads.java, 
 build/pack_payloads.py). This walks the same layout with the key the build generated and compares
 the result against the staged inputs:
 
-  * runtime entries must come back byte-identical to build/launcher/assets/zb/**;
-  * the bundled client must inflate to a file that is byte-identical to the staged base.apk;
+  * runtime entries must come back byte-identical to translator/build/launcher/assets/zb/**;
+  * the public build has no client container and never stages a third-party APK;
   * the descriptor's package/label/displayPackage must survive the round trip;
   * every offset must land exactly where the index says.
 
@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 KEYS = PROJECT / "build" / "payloads" / "src" / "com" / "chucny" / "translator" / "launcher" / "Keys.java"
-RUNTIME = PROJECT / "build" / "launcher" / "assets" / "zb"
+RUNTIME = PROJECT / "translator" / "build" / "launcher" / "assets" / "zb"
 CLIENT = PROJECT / "build" / "bundled-assets" / "app" / "base.apk"  # optional and not committed
 
 

@@ -158,6 +158,7 @@ public final class LauncherContractsTest {
         check(proxy != null && proxy.getName().equals("libexample.so"), "proxy path");
         check("proxy-v1".equals(read(proxy)), "proxy copied atomically");
         write(template, "proxy-v2");
+        check(template.setLastModified(System.currentTimeMillis() + 2000), "advance proxy template timestamp");
         check(proxy.equals(PluginFiles.resolveLibrary(new File(root, "plugin/lib"), proxyDir, template, true, "example")),
                 "same proxy path reused");
         check("proxy-v2".equals(read(proxy)), "stale proxy is refreshed from the updated template");

@@ -68,5 +68,11 @@ cp "$BRIDGE" "$JNI/libzbridge.so"
 VERSION=$(cd "$ASSETS" && while IFS= read -r file; do sha256sum "$file"; done < zb-files.txt | sha256sum | cut -d' ' -f1)
 printf '%s\n' "$VERSION" > "$ASSETS/zb-version.txt"
 
-py -3 "$ROOT/tools/check_launcher_bundle.py" "$OUT"
+PYTHON=${PYTHON:-py}
+PYTHON_ARGS="-3"
+if ! command -v "$PYTHON" >/dev/null 2>&1 && [ -x "${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Programs/Python/Python313/python.exe" ]; then
+    PYTHON="${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Programs/Python/Python313/python.exe"
+    PYTHON_ARGS=""
+fi
+"$PYTHON" $PYTHON_ARGS "$ROOT/tools/check_launcher_bundle.py" "$OUT"
 du -sh "$OUT"
