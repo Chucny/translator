@@ -1,0 +1,39 @@
+# build outputs
+build/
+out/
+.gradle/
+*.o
+*.so.dbg
+
+# downloaded source images and archives (the curated runtime sysroot is tracked)
+*.img
+*.zip
+
+# third-party application packages and generated APKs
+*.apk
+*.exe
+*.dll
+*.class
+
+# local scratch
+.cache/
+.worktrees/
+
+# local session helpers and screenshots (never commit)
+cc
+cod
+Screenshot_*.jpg
+
+# Keep the Gradle wrapper source and wrapper JAR; build outputs remain ignored.
+1.jpg
+2.jpg
+3.jpg
+crash.txt
+tools/__pycache__/
+
+# release signing material: never in the repository
+*.keystore
+*.jks
+signing.properties
+local.properties
+crash.txt.bak

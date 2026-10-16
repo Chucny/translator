@@ -1,0 +1,66 @@
+# Android / Gradle outputs
+.gradle/
+launcher/app/build/
+translator/build/
+translator/android/**/build/
+build/payloads/
+build/outputs/*
+!build/outputs/.gitkeep
+build/launcher/
+translator/build/android-arm64/
+translator/build/guest/
+translator/build/host/
+translator/build/t6/
+translator/build/t7/
+local.properties
+*.apk
+*.aab
+*.idsig
+*.mapping
+mapping*.txt
+chucnys-translator-no-bundled-app.apk
+chucnys-translator-obfuscated.apk
+translator-debug.apk
+build/.tmp-manifest.bin
+build/stability-tests/
+build/device-*.xml
+
+# Native build outputs
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+.ninja_*
+*.o
+*.obj
+*.a
+*.lib
+*.pdb
+*.ilk
+
+# Generated local sysroot images and downloads (the curated sysroot is tracked)
+**/.cache/
+*.img
+*.zip
+
+# Signing material and credentials
+*.keystore
+*.jks
+signing.properties
+*.pem
+*.p12
+
+# Python and editor metadata
+__pycache__/
+*.py[cod]
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Windows executable utilities and installers
+*.exe
+*.msi
+*.dll
+*.bat
+*.cmd

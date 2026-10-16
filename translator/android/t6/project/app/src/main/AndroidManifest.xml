@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="false"
+        android:label="ZBridge T6"
+        android:theme="@android:style/Theme.Material">
+
+        <activity
+            android:name="com.chucny.translator.core.GuestTestActivity"
+            android:exported="true"
+            android:process=":guest">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- AndroidIDE injects the Kotlin-based LogWire logger into debug builds. This app has no
+             Kotlin stdlib, so its init provider crashes the main process. Drop it. -->
+        <provider
+            android:name="io.github.mohammedbaqernull.logger.logwire.LogWireInitializer"
+            tools:node="remove" />
+    </application>
+</manifest>

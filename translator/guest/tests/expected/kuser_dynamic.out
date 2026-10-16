@@ -1,0 +1,4 @@
+version=PASS
+cmpxchg=PASS
+barrier=PASS
+get_tls=PASS

@@ -1,0 +1,116 @@
+diff --git a/src/dynarmic/frontend/A32/decoder/asimd.inc b/src/dynarmic/frontend/A32/decoder/asimd.inc
+--- a/src/dynarmic/frontend/A32/decoder/asimd.inc
++++ b/src/dynarmic/frontend/A32/decoder/asimd.inc
+@@ -59,11 +59,11 @@
+ // Three registers of different lengths
+ INST(asimd_VADDL,           "VADDL/VADDW",              "1111001U1Dzznnnndddd000oN0M0mmmm") // ASIMD
+ INST(asimd_VSUBL,           "VSUBL/VSUBW",              "1111001U1Dzznnnndddd001oN0M0mmmm") // ASIMD
+-//INST(asimd_VADDHN,          "VADDHN",                   "111100101-----------0100-0-0----") // ASIMD
+-//INST(asimd_VRADDHN,         "VRADDHN",                  "111100111-----------0100-0-0----") // ASIMD
++INST(asimd_VADDHN,          "VADDHN",                   "111100101Dzznnnndddd0100N0M0mmmm") // ASIMD
++INST(asimd_VRADDHN,         "VRADDHN",                  "111100111Dzznnnndddd0100N0M0mmmm") // ASIMD
+ INST(asimd_VABAL,           "VABAL",                    "1111001U1Dzznnnndddd0101N0M0mmmm") // ASIMD
+-//INST(asimd_VSUBHN,          "VSUBHN",                   "111100101-----------0110-0-0----") // ASIMD
+-//INST(asimd_VRSUBHN,         "VRSUBHN",                  "111100111-----------0110-0-0----") // ASIMD
++INST(asimd_VSUBHN,          "VSUBHN",                   "111100101Dzznnnndddd0110N0M0mmmm") // ASIMD
++INST(asimd_VRSUBHN,         "VRSUBHN",                  "111100111Dzznnnndddd0110N0M0mmmm") // ASIMD
+ INST(asimd_VABDL,           "VABDL",                    "1111001U1Dzznnnndddd0111N0M0mmmm") // ASIMD
+ INST(asimd_VMLAL,           "VMLAL/VMLSL",              "1111001U1Dzznnnndddd10o0N0M0mmmm") // ASIMD
+ //INST(asimd_VQDMLAL,         "VQDMLAL",                  "111100101-----------10-1-0-0----") // ASIMD
+diff --git a/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h b/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
+--- a/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
++++ b/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
+@@ -902,6 +902,10 @@
+     // Advanced SIMD three registers with different lengths
+     bool asimd_VADDL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm);
+     bool asimd_VSUBL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm);
++    bool asimd_VADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
++    bool asimd_VRADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
++    bool asimd_VSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
++    bool asimd_VRSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+     bool asimd_VABAL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+     bool asimd_VABDL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm);
+     bool asimd_VMLAL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm);
+diff --git a/src/dynarmic/frontend/A32/translate/impl/asimd_three_regs.cpp b/src/dynarmic/frontend/A32/translate/impl/asimd_three_regs.cpp
+--- a/src/dynarmic/frontend/A32/translate/impl/asimd_three_regs.cpp
++++ b/src/dynarmic/frontend/A32/translate/impl/asimd_three_regs.cpp
+@@ -27,6 +27,16 @@
+     Both,
+ };
+ 
++enum class NarrowingOperation {
++    Add,
++    Subtract,
++};
++
++enum class NarrowingRounding {
++    None,
++    Round,
++};
++
+ template<bool WithDst, typename Callable>
+ bool BitwiseInstruction(TranslatorVisitor& v, bool D, size_t Vn, size_t Vd, bool N, bool Q, bool M, size_t Vm, Callable fn) {
+     if (Q && (mcl::bit::get_bit<0>(Vd) || mcl::bit::get_bit<0>(Vn) || mcl::bit::get_bit<0>(Vm))) {
+@@ -213,6 +223,39 @@
+     return true;
+ }
+ 
++bool HighNarrowingOperation(TranslatorVisitor& v, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm, NarrowingOperation op, NarrowingRounding rounding) {
++    if (sz == 0b11) {
++        return v.DecodeError();
++    }
++
++    if (mcl::bit::get_bit<0>(Vn) || mcl::bit::get_bit<0>(Vm)) {
++        return v.UndefinedInstruction();
++    }
++
++    const size_t esize = 8U << sz;
++    const size_t doubled_esize = 2 * esize;
++
++    const auto d = ToVector(false, Vd, D);
++    const auto n = ToVector(true, Vn, N);
++    const auto m = ToVector(true, Vm, M);
++
++    const auto reg_n = v.ir.GetVector(n);
++    const auto reg_m = v.ir.GetVector(m);
++    auto wide_result = op == NarrowingOperation::Add ? v.ir.VectorAdd(doubled_esize, reg_n, reg_m)
++                                                     : v.ir.VectorSub(doubled_esize, reg_n, reg_m);
++
++    if (rounding == NarrowingRounding::Round) {
++        const u64 round_value = 1ULL << (esize - 1);
++        const auto round_const = v.ir.VectorBroadcast(doubled_esize, v.I(doubled_esize, round_value));
++        wide_result = v.ir.VectorAdd(doubled_esize, wide_result, round_const);
++    }
++
++    const auto result = v.ir.VectorNarrow(doubled_esize, v.ir.VectorLogicalShiftRight(doubled_esize, wide_result, static_cast<u8>(esize)));
++
++    v.ir.SetVector(d, result);
++    return true;
++}
++
+ template<typename Callable>
+ bool WideInstruction(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm, WidenBehaviour widen_behaviour, Callable fn) {
+     const size_t esize = 8U << sz;
+@@ -911,6 +954,22 @@
+     });
+ }
+ 
++bool TranslatorVisitor::asimd_VADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
++    return HighNarrowingOperation(*this, D, sz, Vn, Vd, N, M, Vm, NarrowingOperation::Add, NarrowingRounding::None);
++}
++
++bool TranslatorVisitor::asimd_VRADDHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
++    return HighNarrowingOperation(*this, D, sz, Vn, Vd, N, M, Vm, NarrowingOperation::Add, NarrowingRounding::Round);
++}
++
++bool TranslatorVisitor::asimd_VSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
++    return HighNarrowingOperation(*this, D, sz, Vn, Vd, N, M, Vm, NarrowingOperation::Subtract, NarrowingRounding::None);
++}
++
++bool TranslatorVisitor::asimd_VRSUBHN(bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
++    return HighNarrowingOperation(*this, D, sz, Vn, Vd, N, M, Vm, NarrowingOperation::Subtract, NarrowingRounding::Round);
++}
++
+ bool TranslatorVisitor::asimd_VABAL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {
+     return AbsoluteDifferenceLong(*this, U, D, sz, Vn, Vd, N, M, Vm, AccumulateBehavior::Accumulate);
+ }

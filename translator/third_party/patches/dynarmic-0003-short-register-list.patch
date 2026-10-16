@@ -1,0 +1,64 @@
+diff --git a/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_multiple.cpp b/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_multiple.cpp
+index 2bc782b9..664715e8 100644
+--- a/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_multiple.cpp
++++ b/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_multiple.cpp
+@@ -54,7 +54,13 @@ bool TranslatorVisitor::thumb32_LDMDB(bool W, Reg n, Imm<16> reg_list) {
+     const auto regs_imm = reg_list.ZeroExtend();
+     const auto num_regs = static_cast<u32>(mcl::bit::count_ones(regs_imm));
+ 
+-    if (n == Reg::PC || num_regs < 2) {
++    // A register list shorter than two is constrained UNPREDICTABLE for this encoding, and the
++    // ARM architecture lets an implementation execute it normally. Refusing it stops real code:
++    // clang emits `stm.w r0, {r2}` into bionic's strcpy tail (measured: the assembler produces
++    // exactly e880 0004), and it reaches the translator as soon as a guest copies a string.
++    // Executing normally is the one permitted behaviour that cannot silently drop the store the
++    // compiler intended; treat a list that is merely short as ordinary, and keep trapping on PC.
++    if (n == Reg::PC) {
+         return UnpredictableInstruction();
+     }
+     if (reg_list.Bit<15>() && reg_list.Bit<14>()) {
+@@ -79,7 +85,13 @@ bool TranslatorVisitor::thumb32_LDMIA(bool W, Reg n, Imm<16> reg_list) {
+     const auto regs_imm = reg_list.ZeroExtend();
+     const auto num_regs = static_cast<u32>(mcl::bit::count_ones(regs_imm));
+ 
+-    if (n == Reg::PC || num_regs < 2) {
++    // A register list shorter than two is constrained UNPREDICTABLE for this encoding, and the
++    // ARM architecture lets an implementation execute it normally. Refusing it stops real code:
++    // clang emits `stm.w r0, {r2}` into bionic's strcpy tail (measured: the assembler produces
++    // exactly e880 0004), and it reaches the translator as soon as a guest copies a string.
++    // Executing normally is the one permitted behaviour that cannot silently drop the store the
++    // compiler intended; treat a list that is merely short as ordinary, and keep trapping on PC.
++    if (n == Reg::PC) {
+         return UnpredictableInstruction();
+     }
+     if (reg_list.Bit<15>() && reg_list.Bit<14>()) {
+@@ -112,7 +124,13 @@ bool TranslatorVisitor::thumb32_STMIA(bool W, Reg n, Imm<15> reg_list) {
+     const auto regs_imm = reg_list.ZeroExtend();
+     const auto num_regs = static_cast<u32>(mcl::bit::count_ones(regs_imm));
+ 
+-    if (n == Reg::PC || num_regs < 2) {
++    // A register list shorter than two is constrained UNPREDICTABLE for this encoding, and the
++    // ARM architecture lets an implementation execute it normally. Refusing it stops real code:
++    // clang emits `stm.w r0, {r2}` into bionic's strcpy tail (measured: the assembler produces
++    // exactly e880 0004), and it reaches the translator as soon as a guest copies a string.
++    // Executing normally is the one permitted behaviour that cannot silently drop the store the
++    // compiler intended; treat a list that is merely short as ordinary, and keep trapping on PC.
++    if (n == Reg::PC) {
+         return UnpredictableInstruction();
+     }
+     if (W && mcl::bit::get_bit(static_cast<size_t>(n), regs_imm)) {
+@@ -131,7 +149,13 @@ bool TranslatorVisitor::thumb32_STMDB(bool W, Reg n, Imm<15> reg_list) {
+     const auto regs_imm = reg_list.ZeroExtend();
+     const auto num_regs = static_cast<u32>(mcl::bit::count_ones(regs_imm));
+ 
+-    if (n == Reg::PC || num_regs < 2) {
++    // A register list shorter than two is constrained UNPREDICTABLE for this encoding, and the
++    // ARM architecture lets an implementation execute it normally. Refusing it stops real code:
++    // clang emits `stm.w r0, {r2}` into bionic's strcpy tail (measured: the assembler produces
++    // exactly e880 0004), and it reaches the translator as soon as a guest copies a string.
++    // Executing normally is the one permitted behaviour that cannot silently drop the store the
++    // compiler intended; treat a list that is merely short as ordinary, and keep trapping on PC.
++    if (n == Reg::PC) {
+         return UnpredictableInstruction();
+     }
+     if (W && mcl::bit::get_bit(static_cast<size_t>(n), regs_imm)) {

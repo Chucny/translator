@@ -1,0 +1,10 @@
+target_sdk=PASS
+compat=PASS
+dlopen std=PASS
+dlopen regexp=PASS
+dlopen zlib=PASS
+dlopen openal=PASS
+dlopen lime=PASS
+dlopen ApplicationMain=PASS
+jni_onload=PASS
+hxcpp_main=PASS

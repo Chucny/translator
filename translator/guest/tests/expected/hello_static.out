@@ -1,0 +1,6 @@
+hello arm32
+argc=2 argv1=world
+malloc=PASS
+mmap=PASS
+clock=PASS
+pid=PASS

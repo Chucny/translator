@@ -1,0 +1,36 @@
+diff --git a/src/dynarmic/backend/arm64/emit_arm64_a32.cpp b/src/dynarmic/backend/arm64/emit_arm64_a32.cpp
+index 909dde73..218564db 100644
+--- a/src/dynarmic/backend/arm64/emit_arm64_a32.cpp
++++ b/src/dynarmic/backend/arm64/emit_arm64_a32.cpp
+@@ -170,8 +170,12 @@ void EmitA32CheckMemoryAbort(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
+ 
+     const A32::LocationDescriptor current_location{IR::LocationDescriptor{inst->GetArg(0).GetU64()}};
+ 
+-    code.LDAR(Xscratch0, Xhalt);
+-    code.TST(Xscratch0, static_cast<u32>(HaltReason::MemoryAbort));
++    // The halt word is a 32-bit value (`run_code(..., volatile u32* halt_reason)`), so it is only
++    // guaranteed 4-byte aligned. A 64-bit LDAR requires 8-byte alignment and raises BUS_ADRALN on
++    // an A64 host when the word sits at offset 4 (mod 8) -- which it does as a member of the
++    // interface's Impl. Read it with the 32-bit form, as the terminal halt checks above do.
++    code.LDAR(Wscratch0, Xhalt);
++    code.TST(Wscratch0, static_cast<u32>(HaltReason::MemoryAbort));
+     code.B(EQ, end);
+     EmitSetUpperLocationDescriptor(code, ctx, current_location, ctx.block.Location());
+     code.MOV(Wscratch0, current_location.PC());
+diff --git a/src/dynarmic/backend/arm64/emit_arm64_a64.cpp b/src/dynarmic/backend/arm64/emit_arm64_a64.cpp
+index 5152a54b..ab2e8711 100644
+--- a/src/dynarmic/backend/arm64/emit_arm64_a64.cpp
++++ b/src/dynarmic/backend/arm64/emit_arm64_a64.cpp
+@@ -153,8 +153,10 @@ void EmitA64CheckMemoryAbort(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
+ 
+     const A64::LocationDescriptor current_location{IR::LocationDescriptor{inst->GetArg(0).GetU64()}};
+ 
+-    code.LDAR(Xscratch0, Xhalt);
+-    code.TST(Xscratch0, static_cast<u32>(HaltReason::MemoryAbort));
++    // See EmitA32CheckMemoryAbort: the halt word is a u32 and may be only 4-byte aligned, so a
++    // 64-bit LDAR would fault with BUS_ADRALN. Use the 32-bit ordered load.
++    code.LDAR(Wscratch0, Xhalt);
++    code.TST(Wscratch0, static_cast<u32>(HaltReason::MemoryAbort));
+     code.B(EQ, end);
+     code.MOV(Xscratch0, current_location.PC());
+     code.STR(Xscratch0, Xstate, offsetof(A64JitState, pc));

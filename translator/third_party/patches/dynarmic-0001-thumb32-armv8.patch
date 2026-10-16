@@ -1,0 +1,199 @@
+diff --git a/src/dynarmic/backend/arm64/a32_address_space.cpp b/src/dynarmic/backend/arm64/a32_address_space.cpp
+index bbdf925f..673dba0f 100644
+--- a/src/dynarmic/backend/arm64/a32_address_space.cpp
++++ b/src/dynarmic/backend/arm64/a32_address_space.cpp
+@@ -166,7 +166,9 @@ IR::Block A32AddressSpace::GenerateIR(IR::LocationDescriptor descriptor) const {
+ 
+     Optimization::PolyfillPass(ir_block, {});
+     Optimization::NamingPass(ir_block);
+-    if (conf.HasOptimization(OptimizationFlag::GetSetElimination)) {
++    // As in A64AddressSpace: register writes must be committed before a memory access that can
++    // halt the block, or a precise memory abort leaves stale guest registers.
++    if (conf.HasOptimization(OptimizationFlag::GetSetElimination) && !conf.check_halt_on_memory_access) {
+         Optimization::A32GetSetElimination(ir_block, {.convert_nzc_to_nz = true});
+         Optimization::DeadCodeElimination(ir_block);
+     }
+diff --git a/src/dynarmic/frontend/A32/decoder/thumb32.inc b/src/dynarmic/frontend/A32/decoder/thumb32.inc
+index ecc7a655..77674232 100644
+--- a/src/dynarmic/frontend/A32/decoder/thumb32.inc
++++ b/src/dynarmic/frontend/A32/decoder/thumb32.inc
+@@ -21,6 +21,18 @@ INST(thumb32_LDRD_imm_1,     "LDRD (imm)",               "11101000U111nnnnttttss
+ INST(thumb32_LDRD_imm_2,     "LDRD (imm)",               "11101001U1W1nnnnttttssssiiiiiiii")
+ INST(thumb32_STL,            "STL",                      "111010001100nnnntttt111110101111") // v8
+ INST(thumb32_LDA,            "LDA",                      "111010001101nnnntttt111110101111") // v8
++INST(thumb32_LDAB,           "LDAB",                     "111010001101nnnntttt111110001111") // v8
++INST(thumb32_LDAH,           "LDAH",                     "111010001101nnnntttt111110011111") // v8
++INST(thumb32_LDAEX,          "LDAEX",                    "111010001101nnnntttt111111101111") // v8
++INST(thumb32_LDAEXB,         "LDAEXB",                   "111010001101nnnntttt111111001111") // v8
++INST(thumb32_LDAEXH,         "LDAEXH",                   "111010001101nnnntttt111111011111") // v8
++INST(thumb32_LDAEXD,         "LDAEXD",                   "111010001101nnnnttttuuuu11111111") // v8
++INST(thumb32_STLB,           "STLB",                     "111010001100nnnntttt111110001111") // v8
++INST(thumb32_STLH,           "STLH",                     "111010001100nnnntttt111110011111") // v8
++INST(thumb32_STLEX,          "STLEX",                    "111010001100nnnntttt11111110dddd") // v8
++INST(thumb32_STLEXB,         "STLEXB",                   "111010001100nnnntttt11111100dddd") // v8
++INST(thumb32_STLEXH,         "STLEXH",                   "111010001100nnnntttt11111101dddd") // v8
++INST(thumb32_STLEXD,         "STLEXD",                   "111010001100nnnnttttuuuu1111dddd") // v8
+ INST(thumb32_STREXB,         "STREXB",                   "111010001100nnnntttt11110100dddd")
+ INST(thumb32_STREXH,         "STREXH",                   "111010001100nnnntttt11110101dddd")
+ INST(thumb32_STREXD,         "STREXD",                   "111010001100nnnnttttuuuu0111dddd")
+@@ -251,6 +263,8 @@ INST(thumb32_RBIT,           "RBIT",                     "111110101001nnnn1111dd
+ INST(thumb32_REVSH,          "REVSH",                    "111110101001nnnn1111dddd1011mmmm")
+ INST(thumb32_SEL,            "SEL",                      "111110101010nnnn1111dddd1000mmmm")
+ INST(thumb32_CLZ,            "CLZ",                      "111110101011nnnn1111dddd1000mmmm")
++INST(thumb32_CRC32,          "CRC32",                    "111110101100nnnn1111dddd10zzmmmm") // v8
++INST(thumb32_CRC32C,         "CRC32C",                   "111110101101nnnn1111dddd10zzmmmm") // v8
+ 
+ // Multiply, Multiply Accumulate, and Absolute Difference
+ INST(thumb32_MUL,            "MUL",                      "111110110000nnnn1111dddd0000mmmm")
+diff --git a/src/dynarmic/frontend/A32/translate/impl/a32_crc32.cpp b/src/dynarmic/frontend/A32/translate/impl/a32_crc32.cpp
+index 8ee54410..b039ec7d 100644
+--- a/src/dynarmic/frontend/A32/translate/impl/a32_crc32.cpp
++++ b/src/dynarmic/frontend/A32/translate/impl/a32_crc32.cpp
+@@ -92,4 +92,15 @@ bool TranslatorVisitor::arm_CRC32C(Cond cond, Imm<2> sz, Reg n, Reg d, Reg m) {
+     return CRC32Variant(*this, cond, sz, n, d, m, CRCType::Castagnoli);
+ }
+ 
++// T32 CRC32{B,H,W} <Rd>, <Rn>, <Rm>. Conditions come from an enclosing IT block, which the
++// Thumb translator applies itself.
++bool TranslatorVisitor::thumb32_CRC32(Reg n, Reg d, Imm<2> sz, Reg m) {
++    return CRC32Variant(*this, Cond::AL, sz, n, d, m, CRCType::ISO);
++}
++
++// T32 CRC32C{B,H,W} <Rd>, <Rn>, <Rm>
++bool TranslatorVisitor::thumb32_CRC32C(Reg n, Reg d, Imm<2> sz, Reg m) {
++    return CRC32Variant(*this, Cond::AL, sz, n, d, m, CRCType::Castagnoli);
++}
++
+ }  // namespace Dynarmic::A32
+diff --git a/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h b/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
+index 44ac2450..4086386c 100644
+--- a/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
++++ b/src/dynarmic/frontend/A32/translate/impl/a32_translate_impl.h
+@@ -124,6 +124,8 @@ struct TranslatorVisitor final {
+     // CRC32 instructions
+     bool arm_CRC32(Cond cond, Imm<2> sz, Reg n, Reg d, Reg m);
+     bool arm_CRC32C(Cond cond, Imm<2> sz, Reg n, Reg d, Reg m);
++    bool thumb32_CRC32(Reg n, Reg d, Imm<2> sz, Reg m);
++    bool thumb32_CRC32C(Reg n, Reg d, Imm<2> sz, Reg m);
+ 
+     // Data processing instructions
+     bool arm_ADC_imm(Cond cond, bool S, Reg n, Reg d, int rotate, Imm<8> imm8);
+@@ -496,6 +498,18 @@ struct TranslatorVisitor final {
+ 
+     // thumb32 load/store dual, load/store exclusive, table branch instructions
+     bool thumb32_LDA(Reg n, Reg t);
++    bool thumb32_LDAB(Reg n, Reg t);
++    bool thumb32_LDAH(Reg n, Reg t);
++    bool thumb32_LDAEX(Reg n, Reg t);
++    bool thumb32_LDAEXB(Reg n, Reg t);
++    bool thumb32_LDAEXH(Reg n, Reg t);
++    bool thumb32_LDAEXD(Reg n, Reg t, Reg t2);
++    bool thumb32_STLB(Reg n, Reg t);
++    bool thumb32_STLH(Reg n, Reg t);
++    bool thumb32_STLEX(Reg n, Reg t, Reg d);
++    bool thumb32_STLEXB(Reg n, Reg t, Reg d);
++    bool thumb32_STLEXH(Reg n, Reg t, Reg d);
++    bool thumb32_STLEXD(Reg n, Reg t, Reg t2, Reg d);
+     bool thumb32_LDRD_imm_1(bool U, Reg n, Reg t, Reg t2, Imm<8> imm8);
+     bool thumb32_LDRD_imm_2(bool U, bool W, Reg n, Reg t, Reg t2, Imm<8> imm8);
+     bool thumb32_LDRD_lit_1(bool U, Reg t, Reg t2, Imm<8> imm8);
+diff --git a/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_dual.cpp b/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_dual.cpp
+index 17d4285c..57c4e5d1 100644
+--- a/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_dual.cpp
++++ b/src/dynarmic/frontend/A32/translate/impl/thumb32_load_store_dual.cpp
+@@ -136,6 +136,95 @@ bool TranslatorVisitor::thumb32_LDA(Reg n, Reg t) {
+     return true;
+ }
+ 
++bool TranslatorVisitor::thumb32_LDAB(Reg n, Reg t) {
++    if (t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    ir.SetRegister(t, ir.ZeroExtendToWord(ir.ReadMemory8(address, IR::AccType::ORDERED)));
++    return true;
++}
++
++bool TranslatorVisitor::thumb32_LDAH(Reg n, Reg t) {
++    if (t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    ir.SetRegister(t, ir.ZeroExtendToWord(ir.ReadMemory16(address, IR::AccType::ORDERED)));
++    return true;
++}
++
++// ARMv8 "load acquire exclusive" behaves like LDREX*; "store release exclusive" like STREX*.
++bool TranslatorVisitor::thumb32_LDAEX(Reg n, Reg t) {
++    if (t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    ir.SetRegister(t, ir.ExclusiveReadMemory32(address, IR::AccType::ATOMIC));
++    return true;
++}
++
++bool TranslatorVisitor::thumb32_LDAEXB(Reg n, Reg t) {
++    return thumb32_LDREXB(n, t);
++}
++
++bool TranslatorVisitor::thumb32_LDAEXH(Reg n, Reg t) {
++    return thumb32_LDREXH(n, t);
++}
++
++bool TranslatorVisitor::thumb32_LDAEXD(Reg n, Reg t, Reg t2) {
++    return thumb32_LDREXD(n, t, t2);
++}
++
++bool TranslatorVisitor::thumb32_STLB(Reg n, Reg t) {
++    if (t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    ir.WriteMemory8(address, ir.LeastSignificantByte(ir.GetRegister(t)), IR::AccType::ORDERED);
++    return true;
++}
++
++bool TranslatorVisitor::thumb32_STLH(Reg n, Reg t) {
++    if (t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    ir.WriteMemory16(address, ir.LeastSignificantHalf(ir.GetRegister(t)), IR::AccType::ORDERED);
++    return true;
++}
++
++bool TranslatorVisitor::thumb32_STLEX(Reg n, Reg t, Reg d) {
++    if (d == Reg::PC || t == Reg::PC || n == Reg::PC) {
++        return UnpredictableInstruction();
++    }
++    if (d == n || d == t) {
++        return UnpredictableInstruction();
++    }
++
++    const auto address = ir.GetRegister(n);
++    const auto passed = ir.ExclusiveWriteMemory32(address, ir.GetRegister(t), IR::AccType::ATOMIC);
++    ir.SetRegister(d, passed);
++    return true;
++}
++
++bool TranslatorVisitor::thumb32_STLEXB(Reg n, Reg t, Reg d) {
++    return thumb32_STREXB(n, t, d);
++}
++
++bool TranslatorVisitor::thumb32_STLEXH(Reg n, Reg t, Reg d) {
++    return thumb32_STREXH(n, t, d);
++}
++
++bool TranslatorVisitor::thumb32_STLEXD(Reg n, Reg t, Reg t2, Reg d) {
++    return thumb32_STREXD(n, t, t2, d);
++}
++
+ bool TranslatorVisitor::thumb32_LDRD_imm_1(bool U, Reg n, Reg t, Reg t2, Imm<8> imm8) {
+     return LoadDualImmediate(*this, false, U, true, n, t, t2, imm8);
+ }

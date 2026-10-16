@@ -1,0 +1,14 @@
+services:
+  jdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - gradle-cache:/home/translator/.gradle
+    stdin_open: true
+    tty: true
+
+volumes:
+  gradle-cache:

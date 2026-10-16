@@ -1,0 +1,6 @@
+hello dynamic arm32
+argc=2
+file=PASS
+dlopen=PASS
+clock=PASS
+malloc=PASS

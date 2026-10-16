@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="false"
+        android:label="ZBridge T7"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name="com.chucny.translator.t7.T7Activity"
+            android:exported="true"
+            android:process=":guest">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <provider
+            android:name="io.github.mohammedbaqernull.logger.logwire.LogWireInitializer"
+            tools:node="remove" />
+    </application>
+</manifest>

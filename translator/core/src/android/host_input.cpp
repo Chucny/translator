@@ -1,0 +1,347 @@
+#include "zb/host_input.h"
+
+#include <chrono>
+#include <cstring>
+#include <thread>
+
+#include "zb/guest_memory.h"
+#include "zb/input_hostcalls.h"
+#include "zb/log.h"
+#include "zb/runtime_report.h"
+
+namespace zb {
+
+namespace {
+
+inline void* as_pointer(std::uint64_t value) {
+    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(value));
+}
+
+inline std::uint64_t from_pointer(const void* value) {
+    return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(value));
+}
+
+std::int64_t monotonic_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+}  // namespace
+
+std::uint32_t HostInput::add_queue(void* queue) {
+    if (queue == nullptr) return 0;
+    // A queue exists: from here on the keeper may have to answer for the guest (see the header).
+    start_input_keeper();
+    return queues_.add(from_pointer(queue));
+}
+
+void HostInput::note_input_progress() {
+    last_input_progress_ms_.store(monotonic_ms(), std::memory_order_relaxed);
+}
+
+void HostInput::start_input_keeper() {
+    bool expected = false;
+    if (!input_keeper_started_.compare_exchange_strong(expected, true)) return;
+    note_input_progress();
+    std::thread([this] { input_keeper_loop(); }).detach();
+}
+
+void HostInput::input_keeper_loop() {
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        const std::int64_t idle = monotonic_ms() - last_input_progress_ms_.load(std::memory_order_relaxed);
+        if (idle < kGuestInputStallMs) continue;
+        std::vector<std::uint32_t> attached;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            attached.reserve(attachments_.size());
+            for (const auto& [handle, attachment] : attachments_) {
+                (void)attachment;
+                attached.push_back(handle);
+            }
+        }
+        if (attached.empty()) {
+            // Nothing is attached, so the framework is not waiting on us; keep the clock fresh.
+            note_input_progress();
+            continue;
+        }
+        std::size_t finished = 0;
+        for (std::uint32_t handle : attached) {
+            void* queue = queue_for(handle);
+            if (queue == nullptr) continue;
+            // Bounded per pass: a queue this far behind is not going to catch up, and one
+            // iteration must not become an unbounded loop of its own.
+            for (std::size_t i = 0; i < 64; ++i) {
+                if (backend_.queue_has_events(queue) <= 0) break;
+                std::int32_t status = 0;
+                void* event = backend_.queue_get_event(queue, status);
+                if (event == nullptr) break;
+                backend_.queue_finish_event(queue, event, 0);
+                ++finished;
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stalled_events_finished_ += finished;
+            if (finished != 0) {
+                runtime_report().note_jni_detail("input-stall-finished",
+                                                 std::to_string(stalled_events_finished_) +
+                                                     " (the guest stopped polling for " +
+                                                     std::to_string(idle / 1000) + "s)",
+                                                 true);
+            }
+        }
+        if (finished != 0) {
+            log("input keeper: finished %zu event(s) the guest left pending after %lld ms of no "
+                "input call, so the framework's five-second input timeout cannot kill the app",
+                finished, static_cast<long long>(idle));
+        }
+        note_input_progress();
+    }
+}
+
+std::size_t HostInput::remove_queue(std::uint32_t handle) {
+    const std::optional<std::uint64_t> value = queues_.remove(handle);
+    if (!value) return 0;
+    std::size_t outstanding = 0;
+    std::vector<std::uint32_t> orphans;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [event, owner] : live_events_) {
+            if (owner == handle) orphans.push_back(event);
+        }
+        for (std::uint32_t event : orphans) live_events_.erase(event);
+        outstanding = orphans.size();
+    }
+    for (std::uint32_t event : orphans) events_.remove(event);
+    if (outstanding != 0) {
+        log("input queue destroyed with %zu events the guest never finished", outstanding);
+        runtime_report().note_jni_detail("input-events-dropped", std::to_string(outstanding), true);
+        report_queue_state();
+    }
+    return outstanding;
+}
+
+void* HostInput::queue_for(std::uint32_t handle) const {
+    const std::optional<std::uint64_t> value = queues_.get(handle);
+    return value && *value != 0 ? as_pointer(*value) : nullptr;
+}
+
+const void* HostInput::live_event(std::uint32_t handle) const {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (live_events_.count(handle) == 0) return nullptr;
+    }
+    const std::optional<std::uint64_t> value = events_.get(handle);
+    return value && *value != 0 ? as_pointer(*value) : nullptr;
+}
+
+void* HostInput::live_queue(std::uint32_t handle) const {
+    return queue_for(handle);
+}
+
+void HostInput::report_queue_state() {
+    std::size_t gotten;
+    std::size_t pre_dispatched;
+    std::size_t finished;
+    std::size_t released;
+    std::size_t outstanding;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        gotten = events_gotten_;
+        pre_dispatched = events_pre_dispatched_;
+        finished = events_finished_;
+        released = events_released_;
+        outstanding = live_events_.size();
+    }
+    runtime_report().note_jni_detail(
+        "input-queue", "get=" + std::to_string(gotten) +
+                           " pre-dispatched=" + std::to_string(pre_dispatched) +
+                           " finish=" + std::to_string(finished) +
+                           " release=" + std::to_string(released) +
+                           " outstanding=" + std::to_string(outstanding), true);
+}
+
+std::optional<HostInput::Ready> HostInput::ready_on(std::uint64_t real_looper) {
+    if (real_looper == 0) return std::nullopt;
+    note_input_progress();
+    std::vector<std::pair<std::uint32_t, Attachment>> candidates;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [handle, attachment] : attachments_) {
+            if (attachment.real_looper == real_looper) candidates.emplace_back(handle, attachment);
+        }
+    }
+    // The backend is asked outside the lock: it is the platform, and nothing guest-facing should
+    // wait on this unit's own mutex.
+    for (const auto& [handle, attachment] : candidates) {
+        void* queue = queue_for(handle);
+        if (queue == nullptr) continue;
+        if (backend_.queue_has_events(queue) > 0) return Ready{attachment.ident, attachment.data};
+    }
+    return std::nullopt;
+}
+
+bool HostInput::reject(const char* function, std::uint32_t handle) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++rejections_;
+        if (first_rejection_.empty()) {
+            first_rejection_ = std::string(function) + " handle " + std::to_string(handle);
+            runtime_report().note_jni_detail("input-rejected", first_rejection_, true);
+        }
+    }
+    log("input call %s rejected: handle %u is not live", function, handle);
+    return true;
+}
+
+bool HostInput::handle_host_call(std::uint32_t index, GuestThread& thread) {
+    if (index < ZB_INPUT_HC_FIRST || index > ZB_INPUT_HC_LAST) return false;
+    note_input_progress();
+    auto& regs = thread.regs();
+    switch (index) {
+    case ZB_INPUT_HC_AInputQueue_hasEvents: {
+        void* queue = live_queue(regs[0]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_hasEvents", regs[0]); }
+        regs[0] = static_cast<std::uint32_t>(backend_.queue_has_events(queue));
+        return true;
+    }
+    case ZB_INPUT_HC_AInputQueue_getEvent: {
+        void* queue = live_queue(regs[0]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_getEvent", regs[0]); }
+        // The guest gets the event as a handle written through its own pointer, which must be
+        // writable before the backend is asked for an event we would then have to drop.
+        std::uint8_t* out = runtime_.memory().host_ptr(regs[1], 4, kPageRead | kPageWrite);
+        if (out == nullptr) {
+            regs[0] = static_cast<std::uint32_t>(-1);
+            return reject("AInputQueue_getEvent output", regs[1]);
+        }
+        std::int32_t status = 0;
+        void* event = backend_.queue_get_event(queue, status);
+        std::uint32_t handle = 0;
+        if (event != nullptr) {
+            handle = events_.add(from_pointer(event));
+            std::lock_guard<std::mutex> lock(mutex_);
+            live_events_[handle] = regs[0];
+            ++events_gotten_;
+        }
+        std::memcpy(out, &handle, sizeof handle);
+        regs[0] = static_cast<std::uint32_t>(status);
+        if (event != nullptr) report_queue_state();
+        return true;
+    }
+    case ZB_INPUT_HC_AInputQueue_preDispatchEvent: {
+        void* queue = live_queue(regs[0]);
+        const void* event = live_event(regs[1]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_preDispatchEvent", regs[0]); }
+        if (event == nullptr) { regs[0] = 0; return reject("AInputQueue_preDispatchEvent event", regs[1]); }
+        const std::int32_t handled = backend_.queue_pre_dispatch(queue, const_cast<void*>(event));
+        // A pre-dispatched event belongs to the framework now (the soft keyboard path): the guest
+        // must not finish it, so its handle ends here.
+        if (handled != 0) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                live_events_.erase(regs[1]);
+                ++events_pre_dispatched_;
+            }
+            events_.remove(regs[1]);
+            report_queue_state();
+        }
+        regs[0] = static_cast<std::uint32_t>(handled);
+        return true;
+    }
+    case ZB_INPUT_HC_AInputQueue_finishEvent: {
+        void* queue = live_queue(regs[0]);
+        const void* event = live_event(regs[1]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_finishEvent", regs[0]); }
+        if (event == nullptr) { regs[0] = 0; return reject("AInputQueue_finishEvent event", regs[1]); }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            live_events_.erase(regs[1]);
+            ++events_finished_;
+        }
+        events_.remove(regs[1]);
+        backend_.queue_finish_event(queue, const_cast<void*>(event), static_cast<std::int32_t>(regs[2]));
+        report_queue_state();
+        regs[0] = 0;
+        return true;
+    }
+    case ZB_INPUT_HC_AInputEvent_release: {
+        const void* event = live_event(regs[0]);
+        if (event == nullptr) { regs[0] = 0; return reject("AInputEvent_release", regs[0]); }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            live_events_.erase(regs[0]);
+            ++events_released_;
+        }
+        events_.remove(regs[0]);
+        report_queue_state();
+        regs[0] = 0;
+        return true;
+    }
+    case ZB_INPUT_HC_AInputQueue_attachLooper: {
+        void* queue = live_queue(regs[0]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_attachLooper", regs[0]); }
+        // regs[1] is the guest's looper, regs[3] and regs[4] its callback and data. A host
+        // AInputQueue has no descriptor we could poll, so this thread must first have a real
+        // Android looper; the queue then goes to it and the guest's own poll picks it up.
+        std::uint64_t real_looper = 0;
+        const bool ready = real_looper_ ? real_looper_(thread, regs[1], real_looper) : false;
+        if (!ready) {
+            runtime_report().note_jni_detail("input-attach", "no real looper on this thread", true);
+            log("AInputQueue_attachLooper: this thread has no real looper, so the queue will not "
+                "deliver");
+        }
+        if (regs[3] != 0) {
+            // The guest wants its own callback run by the looper. Unity's glue passes none and
+            // polls for the ident instead, which is the path served here; a callback would need
+            // the looper's nested re-entry and is recorded rather than silently ignored.
+            runtime_report().note_jni_detail("input-attach", "guest callback is not served yet", true);
+        }
+        // The guest's data travels as an opaque value and comes back from the poll unchanged, so
+        // the guest recognizes its own source. Nothing of the host crosses here.
+        backend_.queue_attach_looper(queue, static_cast<std::int32_t>(regs[2]),
+                                     reinterpret_cast<void*>(static_cast<std::uintptr_t>(regs[4])), real_looper);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            attachments_[regs[0]] = Attachment{real_looper, static_cast<std::int32_t>(regs[2]), regs[4]};
+        }
+        char detail[160];
+        std::snprintf(detail, sizeof detail, "ident %u looper 0x%08x owner-tid %d caller-tid %d%s",
+                      regs[2], regs[1], looper_owner_ ? looper_owner_(regs[1]) : 0, thread.tid,
+                      real_looper != 0 ? "" : " (no real looper)");
+        runtime_report().note_jni_detail("input-attach", detail, true);
+        regs[0] = 0;
+        return true;
+    }
+    case ZB_INPUT_HC_AInputQueue_detachLooper: {
+        void* queue = live_queue(regs[0]);
+        if (queue == nullptr) { regs[0] = 0; return reject("AInputQueue_detachLooper", regs[0]); }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            attachments_.erase(regs[0]);
+        }
+        backend_.queue_detach_looper(queue);
+        regs[0] = 0;
+        return true;
+    }
+    // The JNI conversions hand a Java object to or from native code. A guest that asks for one
+    // would receive a host jobject, which it cannot use; it is told there is none, which is what
+    // a device without that API level answers.
+    case ZB_INPUT_HC_AInputEvent_toJava:
+    case ZB_INPUT_HC_AInputQueue_fromJava:
+    case ZB_INPUT_HC_AKeyEvent_fromJava:
+    case ZB_INPUT_HC_AMotionEvent_fromJava:
+        runtime_report().note_jni_detail("input-unsupported", "JNI event conversion", false);
+        regs[0] = 0;
+        return true;
+
+#include "gen/input_dispatch.inc"
+
+    default:
+        return false;
+    }
+}
+
+}  // namespace zb

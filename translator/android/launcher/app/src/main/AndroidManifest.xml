@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Common needs of plugin apps. Runtime (dangerous) permissions are declared here and
+         requested by GuestPermissions on the way into a launch, because the guest shares the
+         launcher's uid and cannot hold a permission of its own. Location is what a map or a
+         GPS game needs; add more to GuestPermissions.PROXIED as guests require them. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <application
+        android:name=".ZbApplication"
+        android:allowBackup="false"
+        android:label="Chucny's Translator"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:theme="@android:style/Theme.Material.Light.DarkActionBar">
+
+        <activity
+            android:name=".LibraryActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Target of pinned shortcuts: loads the plugin in :guest and starts its launcher activity. -->
+        <!-- Runs in the launcher's own process: it ends the :guest process so another plugin can
+             start in a fresh one. -->
+        <activity
+            android:name=".PluginSwitchActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.chucny.translator.bridge.switch"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".GuestLaunchActivity"
+            android:exported="true"
+            android:process=":guest"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Stub pool. GuestInstrumentation replaces each with the plugin activity named in the intent. -->
+        <activity
+            android:name=".Stubs$Standard"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="standard"
+            android:process=":guest"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity
+            android:name=".Stubs$Landscape"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="standard"
+            android:process=":guest"
+            android:screenOrientation="sensorLandscape"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity
+            android:name=".Stubs$Portrait"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="standard"
+            android:process=":guest"
+            android:screenOrientation="sensorPortrait"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity
+            android:name=".Stubs$SingleTop"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTop"
+            android:process=":guest"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity
+            android:name=".Stubs$SingleTask"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTask"
+            android:process=":guest"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity
+            android:name=".Stubs$SingleInstance"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleInstance"
+            android:process=":guest"
+            android:taskAffinity="com.chucny.translator.bridge.guest"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <!-- AndroidIDE injects the Kotlin-based LogWire logger into debug builds. This app has no
+             Kotlin stdlib, so its init provider crashes the main process. Drop it. -->
+        <provider
+            android:name="io.github.mohammedbaqernull.logger.logwire.LogWireInitializer"
+            tools:node="remove" />
+    </application>
+</manifest>

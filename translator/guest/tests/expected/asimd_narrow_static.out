@@ -1,0 +1,13 @@
+vaddhn.i16 00 00 00 23 12 ff 00 bc
+vraddhn.i16 00 01 00 23 13 00 00 bd
+vsubhn.i16 00 00 00 01 12 ff ff 9a
+vrsubhn.i16 00 01 00 01 13 00 00 9b
+vaddhn.i32 0000 0001 2345 ffff
+vraddhn.i32 0001 0001 2345 0000
+vsubhn.i32 0000 ffff 0123 ffff
+vrsubhn.i32 0001 ffff 0123 0000
+vaddhn.i64 00000000 00000000
+vraddhn.i64 00000001 00000001
+vsubhn.i64 00000000 fffffffe
+vrsubhn.i64 00000001 ffffffff
+asimd narrow ok

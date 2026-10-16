@@ -1,0 +1,16 @@
+ftruncate=PASS
+rename=PASS
+utimensat=PASS
+readdir=PASS
+chdir=PASS
+rmdir=PASS
+poll_select=PASS
+sockets=PASS
+epoll=PASS
+setitimer=PASS
+times=PASS
+getrusage=PASS
+sysinfo=PASS
+main_stack=PASS
+cpuinfo=PASS
+nprocs=PASS

@@ -1,0 +1,12 @@
+key_create=0
+once=0
+key_is_zero=0
+get_before=null
+set=0
+get_after=same
+set_zero=22
+get_zero=null
+key_create2=0
+other_differs=1
+other_value=same
+first_intact=yes
