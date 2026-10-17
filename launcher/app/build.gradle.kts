@@ -60,8 +60,8 @@ android {
         // the :guest process's first window, which then never finishes its Unity start-up.
         // 28 is therefore the lowest value that works, and the oldest era a modern device allows.
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.2"
         ndk { abiFilters += "arm64-v8a" }
         // The runtime bundle is encrypted by build/pack_payloads.py; storing its chunks avoids
         // pointless recompression and keeps extraction deterministic.
